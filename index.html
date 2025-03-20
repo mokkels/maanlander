@@ -15,48 +15,30 @@
 <body>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     <script>
-        // Haal canvas en context op
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
         // Speler (Maaslander)
         const player = {
-            x: canvas.width / 2,
-            y: canvas.height / 2,
+            x: 50,
+            y: canvas.height - 50,
             radius: 10,
             color: 'blue',
-            speed: 5
+            speed: 5,
+            dy: 0,
+            gravity: 0.5,
+            jumpPower: -10,
+            onGround: false
         };
 
-        // Kristallen genereren
-        const crystals = [];
-        const numCrystals = 10;
-        for (let i = 0; i < numCrystals; i++) {
-            crystals.push({
-                x: Math.random() * (canvas.width - 20) + 10,
-                y: Math.random() * (canvas.height - 20) + 10,
-                radius: 5,
-                color: 'green'
-            });
-        }
-
-        // Vijanden genereren
-        const enemies = [];
-        const numEnemies = 5;
-        for (let i = 0; i < numEnemies; i++) {
-            enemies.push({
-                x: Math.random() * (canvas.width - 20) + 10,
-                y: Math.random() * (canvas.height - 20) + 10,
-                radius: 10,
-                color: 'red',
-                dx: (Math.random() - 0.5) * 4, // Willekeurige snelheid
-                dy: (Math.random() - 0.5) * 4
-            });
-        }
-
         // Spelvariabelen
+        let crystals = [];
+        let enemies = [];
         let score = 0;
+        let lives = 3;
+        let level = 1;
         let gameOver = false;
+        let levelScores = [];
 
         // Toetsen bijhouden
         const keys = {
@@ -66,18 +48,61 @@
             ArrowRight: false
         };
 
-        // Toetsenbordinvoer
         window.addEventListener('keydown', (e) => {
-            if (keys.hasOwnProperty(e.key)) {
-                keys[e.key] = true;
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
+            if (e.key === 'ArrowUp' && player.onGround) {
+                player.dy = player.jumpPower;
+                player.onGround = false;
             }
         });
 
         window.addEventListener('keyup', (e) => {
-            if (keys.hasOwnProperty(e.key)) {
-                keys[e.key] = false;
-            }
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = false;
         });
+
+        // Genereer objecten voor een level
+        function generateLevel() {
+            crystals = [];
+            enemies = [];
+            const numCrystals = 10;
+            const numEnemies = 3 + level * 2; // Meer vijanden per level
+
+            // Kristallen
+            for (let i = 0; i < numCrystals; i++) {
+                crystals.push({
+                    x: Math.random() * (canvas.width - 20) + 10,
+                    y: Math.random() * (canvas.height - 20) + 10,
+                    radius: 5,
+                    color: 'green'
+                });
+            }
+
+            // Vijanden met veilige spawn
+            for (let i = 0; i < numEnemies; i++) {
+                let x, y, safe;
+                do {
+                    x = Math.random() * (canvas.width - 20) + 10;
+                    y = Math.random() * (canvas.height - 20) + 10;
+                    safe = Math.hypot(player.x - x, player.y - y) > 50; // Minimaal 50px afstand
+                } while (!safe);
+                enemies.push({
+                    x: x,
+                    y: y,
+                    radius: 10,
+                    color: 'red',
+                    dx: (Math.random() - 0.5) * (2 + level * 0.5), // Sneller per level
+                    dy: (Math.random() - 0.5) * (2 + level * 0.5)
+                });
+            }
+        }
+
+        // Reset speler naar startpositie
+        function resetPlayer() {
+            player.x = 50;
+            player.y = canvas.height - 50;
+            player.dy = 0;
+            player.onGround = true;
+        }
 
         // Tekenfuncties
         function drawPlayer() {
@@ -108,22 +133,47 @@
             });
         }
 
-        function drawScore() {
+        function drawUI() {
             ctx.font = '16px Arial';
             ctx.fillStyle = 'black';
             ctx.fillText(`Score: ${score}`, 10, 20);
+            ctx.fillText(`Levens: ${lives}`, 10, 40);
+            ctx.fillText(`Level: ${level}`, 10, 60);
+        }
+
+        function drawLeaderboard() {
+            ctx.textAlign = 'center';
+            ctx.font = '30px Arial';
+            ctx.fillStyle = gameOver ? 'red' : 'green';
+            ctx.fillText(gameOver ? "Game Over" : "Gefeliciteerd!", canvas.width / 2, canvas.height / 2 - 50);
+            ctx.font = '20px Arial';
+            ctx.fillStyle = 'black';
+            ctx.fillText("Leaderboard", canvas.width / 2, canvas.height / 2);
+            levelScores.forEach((score, index) => {
+                ctx.fillText(`Level ${index + 1}: ${score}`, canvas.width / 2, canvas.height / 2 + 30 + index * 20);
+            });
         }
 
         // Bewegingsfuncties
         function movePlayer() {
-            if (keys.ArrowUp) player.y -= player.speed;
-            if (keys.ArrowDown) player.y += player.speed;
+            // Horizontale beweging
             if (keys.ArrowLeft) player.x -= player.speed;
             if (keys.ArrowRight) player.x += player.speed;
 
-            // Houd speler binnen canvas
+            // Zwaartekracht
+            player.dy += player.gravity;
+            player.y += player.dy;
+
+            // Botsing met vloer en muren
+            if (player.y + player.radius > canvas.height) {
+                player.y = canvas.height - player.radius;
+                player.dy = 0;
+                player.onGround = true;
+            }
+            if (player.x - player.radius < 0 || player.x + player.radius > canvas.width) {
+                loseLife();
+            }
             player.x = Math.max(player.radius, Math.min(player.x, canvas.width - player.radius));
-            player.y = Math.max(player.radius, Math.min(player.y, canvas.height - player.radius));
         }
 
         function moveEnemies() {
@@ -131,13 +181,9 @@
                 enemy.x += enemy.dx;
                 enemy.y += enemy.dy;
 
-                // Laat vijanden stuiteren tegen randen
-                if (enemy.x - enemy.radius < 0 || enemy.x + enemy.radius > canvas.width) {
-                    enemy.dx = -enemy.dx;
-                }
-                if (enemy.y - enemy.radius < 0 || enemy.y + enemy.radius > canvas.height) {
-                    enemy.dy = -enemy.dy;
-                }
+                // Stuiteren tegen muren
+                if (enemy.x - enemy.radius < 0 || enemy.x + enemy.radius > canvas.width) enemy.dx = -enemy.dx;
+                if (enemy.y - enemy.radius < 0 || enemy.y + enemy.radius > canvas.height) enemy.dy = -enemy.dy;
             });
         }
 
@@ -146,17 +192,40 @@
             crystals.forEach((crystal, index) => {
                 const dist = Math.hypot(player.x - crystal.x, player.y - crystal.y);
                 if (dist < player.radius + crystal.radius) {
-                    score++;
-                    crystals.splice(index, 1); // Verwijder kristal
+                    score += 10;
+                    crystals.splice(index, 1);
                 }
             });
 
             enemies.forEach(enemy => {
                 const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
                 if (dist < player.radius + enemy.radius) {
-                    gameOver = true; // Botsing met vijand
+                    loseLife();
                 }
             });
+        }
+
+        function loseLife() {
+            lives--;
+            if (lives > 0) {
+                resetPlayer();
+            } else {
+                gameOver = true;
+            }
+        }
+
+        // Level voltooid
+        function checkLevelComplete() {
+            if (crystals.length === 0) {
+                levelScores.push(score);
+                level++;
+                if (level > 5) { // Max 5 levels
+                    gameOver = true;
+                } else {
+                    resetPlayer();
+                    generateLevel();
+                }
+            }
         }
 
         // Update spelstatus
@@ -164,41 +233,35 @@
             movePlayer();
             moveEnemies();
             checkCollisions();
+            checkLevelComplete();
         }
 
         // Render de game
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            if (!gameOver && crystals.length > 0) {
+            if (!gameOver) {
                 drawPlayer();
                 drawCrystals();
                 drawEnemies();
-                drawScore();
-            } else if (crystals.length === 0) {
-                ctx.textAlign = 'center';
-                ctx.font = '30px Arial';
-                ctx.fillStyle = 'green';
-                ctx.fillText("Je hebt gewonnen!", canvas.width / 2, canvas.height / 2);
+                drawUI();
             } else {
-                ctx.textAlign = 'center';
-                ctx.font = '30px Arial';
-                ctx.fillStyle = 'red';
-                ctx.fillText("Game Over", canvas.width / 2, canvas.height / 2);
+                drawLeaderboard();
             }
         }
 
         // Spel-loop
         function gameLoop() {
-            if (!gameOver && crystals.length > 0) {
+            if (!gameOver) {
                 update();
                 render();
                 requestAnimationFrame(gameLoop);
             } else {
-                render(); // Toon eindbericht
+                render();
             }
         }
 
         // Start het spel
+        generateLevel();
         gameLoop();
     </script>
 </body>
